@@ -1,0 +1,5 @@
+#!/bin/bash
+cd ../sysroot
+source ../toolchain/environment-setup-armv7a-vfp-neon-poky-linux-gnueabi
+gnome-terminal
+exit 0

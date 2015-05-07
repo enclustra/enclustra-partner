@@ -1,0 +1,254 @@
+#!/bin/bash -x
+
+#######################################################################################################################
+# Library check
+
+function message_fail_libsh()
+{
+	    local ZENITY_INSTALLED
+        ZENITY_INSTALLED=`dpkg-query -l | grep zenity-common |& awk -F" " '{ print $1 }'`
+
+	    if [ "${ZENITY_INSTALLED}" != "ii" ]
+	    then
+		    echo "Impossible to connect to internet. Please, double check your Internet connection"
+	    else
+		    zenity --error --text "Impossible to connect to internet. Please, double check your Internet connection"
+	    fi
+}
+
+if [ ! -d libsh ]
+then
+	git clone https://github.com/architech-boards/libsh.git
+	[ $? -eq 0 ] || { message_fail_libsh; exit 1; }
+fi
+cd libsh
+git pull
+[ $? -eq 0 ] || { message_fail_libsh; exit 1; }
+source lib.sh
+get_sudo_password ${SUDO_PASSWORD}
+cd ..
+
+URL_DOWNLOAD=http://downloads.enclustra.com/
+#$(get_url_download)
+
+#######################################################################################################################
+# Check maintenance
+
+check_maintenance
+
+###########################################################################################################
+# Parameters
+
+YOCTO_DIRECTORY="yocto"
+cd ..
+ROOT_DIRECTORY=`pwd`
+BASEROOT_SDK=${ROOT_DIRECTORY}
+NR_CPUS=`grep -c ^processor /proc/cpuinfo`
+DEFAULT_MACHINE="zx3-pm3"
+WGET_TIMEOUT=60
+
+
+###########################################################################################################
+# Get in remote the last version of the package
+# S1 url remote 
+
+function get_remote_version {
+	wget --timeout=${WGET_TIMEOUT} ${1}/version
+	[ $? -eq 0 ] || { internet_error; }
+	REMOTE_VERSION=`cat version`
+	rm version
+	debecho "remote last version of ${1} is ${REMOTE_VERSION}"
+}
+
+###########################################################################################################
+# Script pre-install
+
+cd $BASEROOT_SDK
+wget --timeout=${WGET_TIMEOUT} ${URL_DOWNLOAD}/zx3/script/daisy/pre-script.sh
+[ $? -eq 0 ] || { internet_error; }
+chmod 777 pre-script.sh
+./pre-script.sh
+rm pre-script.sh
+
+###########################################################################################################
+# Yocto installation
+
+cd ${ROOT_DIRECTORY}
+mkdir -p ${YOCTO_DIRECTORY}
+cd ${YOCTO_DIRECTORY}
+
+    git clone git://git.yoctoproject.org/poky
+    cd poky
+    git checkout -b daisy remotes/origin/daisy
+
+    git clone git://git.openembedded.org/meta-openembedded
+    cd meta-openembedded
+    git checkout -b daisy remotes/origin/daisy
+    cd ..
+
+    git clone git://git.yoctoproject.org/meta-xilinx
+    cd meta-xilinx
+    git checkout –b daisy remotes/origin/daisy
+    cd ..
+
+    git clone git://git.yoctoproject.org/meta-xilinx-community
+    git clone https://github.com/enclustra/meta-enclustra.git
+    cd ..
+
+    [ $? -eq 0 ] || { internet_error; }
+
+export TEMPLATECONF="meta-enclustra/conf"
+source poky/oe-init-build-env
+
+###########################################################################################################
+# conf/local.conf customization
+
+cd ${ROOT_DIRECTORY}/yocto/build
+set_cpu_localconf ${NR_CPUS} ./conf
+
+if [ -n "`grep "^MACHINE" conf/local.conf`" ]
+then
+    MATCH_LINE=`grep "^MACHINE" conf/local.conf`
+    sed -i "s|^${MATCH_LINE}|MACHINE ??= \"${DEFAULT_MACHINE}\"|g" conf/local.conf
+else
+    echo "MACHINE ??= \"${DEFAULT_MACHINE}\"" >> conf/local.conf
+fi
+
+if [ -n "`grep "^PACKAGE_CLASSES" conf/local.conf`" ]
+then
+    MATCH_LINE=`grep "^PACKAGE_CLASSES" conf/local.conf`
+    sed -i "s|^${MATCH_LINE}|PACKAGE_CLASSES ?= \"package_ipk\"|g" conf/local.conf
+else
+    echo "PACKAGE_CLASSES ?= \"package_ipk\"" >> conf/local.conf
+fi
+
+###########################################################################################################
+# conf/bblayers.conf customization
+
+cd ${ROOT_DIRECTORY}/yocto/build
+TO_MATCH="poky/meta poky/meta-yocto poky/meta-yocto-bsp poky/meta-xilinx poky/meta-xilinx-community poky/meta-openembedded poky/meta-enclustra"
+BBLAYERS=""
+BBLAYERS_FOUND=`sed -n "/^BBLAYERS /,/\"/ p" conf/bblayers.conf | sed "s|BBLAYERS||g" | sed "s|?||g" | sed "s|=||g" | sed "s|\"||g" | sed "s|\n||g" | sed "s|\\\\\\||g"`
+
+for BBLAYER in $BBLAYERS_FOUND
+do
+    BBLAYERS="$BBLAYERS $BBLAYER"
+done
+
+for CURRENT_LAYER in $TO_MATCH
+do
+    LAYER_FOUND="no"
+    for BBLAYER in $BBLAYERS
+    do
+        if [ -n "`echo $BBLAYER | grep "$CURRENT_LAYER$"`" ]
+        then
+            LAYER_FOUND="yes"
+        fi
+    done
+    if [ ${LAYER_FOUND} == "no" ]
+    then
+        CURRENT_LAYER_FULL_PATH=${ROOT_DIRECTORY}/yocto/${CURRENT_LAYER}
+        BBLAYERS="${BBLAYERS} ${CURRENT_LAYER_FULL_PATH}"
+    fi
+done
+
+BBLAYERS="BBLAYERS ?= \"${BBLAYERS}\""
+
+if [ -z "`grep "^BBLAYERS " conf/bblayers.conf`" ]
+then
+    echo "$BBLAYERS" >> conf/bblayers.conf
+else
+    NUMBER_OF_LINES=`sed -n "/^BBLAYERS /,/\"/ {=;}" conf/bblayers.conf | wc -l`
+    if [ $NUMBER_OF_LINES -gt 1 ]
+    then
+        sed -i "/^BBLAYERS /,/\"/ s/^/#/" conf/bblayers.conf
+        echo "$BBLAYERS" >> conf/bblayers.conf
+    else
+        MATCH=`grep "^BBLAYERS " conf/bblayers.conf`
+        sed -i "s|^${MATCH}|${BBLAYERS}|g" conf/bblayers.conf
+    fi
+fi
+
+###########################################################################################################
+# Installing cross-toolchain
+
+cd ${ROOT_DIRECTORY}
+rm -rf toolchain
+mkdir toolchain
+cd toolchain
+wget --timeout=${WGET_TIMEOUT} ${URL_DOWNLOAD}/toolchain/architech-toolchain.sh
+./architech-toolchain.sh
+rm toolchain.sh
+cd ..
+
+###########################################################################################################
+# Installing sdk enviroment
+
+DATE_BACKUP=`date +%d%m`
+
+# restore backup if something goes wrong
+undo_backup()
+{
+	if [ -f ${1}.$DATE_BACKUP.tgz ]; then 
+		rm -rf ${1}
+		tar -zxf ${1}.$DATE_BACKUP.tgz
+	fi
+}
+
+do_backup()
+{
+	if [ -d ${1} ]; then 
+		rm ${1}.*.tgz
+		tar -zcf ${1}.$DATE_BACKUP.tgz ${1}
+		rm -rf ${1}
+	fi
+}
+
+install_file()
+{
+	echo Install $CMD
+	URL=`echo $LINE | awk -F"@" '{print $2}'`
+	FILE=$CMD.tgz
+	do_backup $CMD
+	rm -rf $CMD
+	wget --timeout=${WGET_TIMEOUT} ${URL}
+	[ $? -eq 0 ] || { rm -f $FILE; undo_backup $CMD; rm conf/sdk.txt; internet_error; }
+	mkdir $CMD
+	tar -zxf $FILE -C $CMD
+	find ${CMD} -type f -exec sed -i "s|@BASEROOT_SDK@|${BASEROOT_SDK}|g" '{}' \;
+	[ $? -eq 0 ] || { rm -f $FILE; undo_backup $CMD; rm conf/sdk.txt; internet_error; }
+	rm -f $FILE
+}
+
+install_qt_local_libraries()
+{
+	echo Install $CMD
+	URL=`echo $LINE | awk -F"@" '{print $2}'`
+	FILE=$CMD.tgz
+	wget --timeout=${WGET_TIMEOUT} ${URL}
+	[ $? -eq 0 ] || { rm -f $FILE; rm conf/sdk.txt; internet_error; }
+	do_sudo "tar -zxf $FILE -C /usr/local"
+    do_sudo "find /usr/local/Trolltech -type f -exec sed -i \"s|@BASEROOT_SDK@|${BASEROOT_SDK}|g\" '{}' \;"
+	[ $? -eq 0 ] || { rm -f $FILE; rm conf/sdk.txt; internet_error; }
+	rm -f $FILE
+}
+
+cd $ROOT_DIRECTORY
+
+
+###########################################################################################################
+# Installing documentation
+
+# no local documentation available
+
+###########################################################################################################
+# Script post-install
+
+cd $BASEROOT_SDK
+wget --timeout=${WGET_TIMEOUT} ${URL_DOWNLOAD}/zx3/script/daisy/post-script.sh
+[ $? -eq 0 ] || { internet_error; }
+chmod 777 post-script.sh
+./post-script.sh
+rm post-script.sh
+
+exit 0

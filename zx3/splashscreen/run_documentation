@@ -1,0 +1,11 @@
+#!/bin/bash -x
+
+function firefox_offline()
+{  
+    zenity --error --text "Impossible to connect to internet."
+}
+
+URL="http://download.enclustra.com/public_files/SoC_Modules/Mars_ZX3/Mars_ZX3_Linux_Quick_Start_Guide.pdf"
+firefox ${URL}
+
+exit 0
