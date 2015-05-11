@@ -28,7 +28,7 @@ source lib.sh
 get_sudo_password ${SUDO_PASSWORD}
 cd ..
 
-URL_DOWNLOAD=http://downloads.enclustra.com/
+URL_DOWNLOAD=http://download.enclustra.com/architech/
 #$(get_url_download)
 
 #######################################################################################################################
@@ -64,7 +64,7 @@ function get_remote_version {
 # Script pre-install
 
 cd $BASEROOT_SDK
-wget --timeout=${WGET_TIMEOUT} ${URL_DOWNLOAD}/zx3/script/daisy/pre-script.sh
+wget --timeout=${WGET_TIMEOUT} ${URL_DOWNLOAD}/pre-script.sh
 [ $? -eq 0 ] || { internet_error; }
 chmod 777 pre-script.sh
 ./pre-script.sh
@@ -79,20 +79,27 @@ cd ${YOCTO_DIRECTORY}
 
     git clone git://git.yoctoproject.org/poky
     cd poky
-    git checkout -b daisy remotes/origin/daisy
+    git checkout -b daisy 02e603e48c6e0b0492f596890adadf6590fa692c
 
     git clone git://git.openembedded.org/meta-openembedded
     cd meta-openembedded
-    git checkout -b daisy remotes/origin/daisy
+    git checkout -b daisy d3d14d3fcca7fcde362cf0b31411dc4eea6d20aa
     cd ..
 
     git clone git://git.yoctoproject.org/meta-xilinx
     cd meta-xilinx
-    git checkout –b daisy remotes/origin/daisy
+    git checkout -b daisy a4d4884312325a97558bbe500c1cb14d9751d26f
     cd ..
 
     git clone git://git.yoctoproject.org/meta-xilinx-community
+    cd meta-xilinx-community
+    git checkout 6a7ebbc6e895bd87593a2571e43cc5215e45fa52
+    cd ..
+
     git clone https://github.com/enclustra/meta-enclustra.git
+    cd meta-enclustra
+    git checkout f76b6f8b1c56b27fd9a0f617775e19ed4ad7ff46
+    cd ..
     cd ..
 
     [ $? -eq 0 ] || { internet_error; }
@@ -176,9 +183,9 @@ cd ${ROOT_DIRECTORY}
 rm -rf toolchain
 mkdir toolchain
 cd toolchain
-wget --timeout=${WGET_TIMEOUT} ${URL_DOWNLOAD}/toolchain/architech-toolchain.sh
-./architech-toolchain.sh
-rm toolchain.sh
+wget --timeout=${WGET_TIMEOUT} ${URL_DOWNLOAD}/toolchain.tgz
+tar -xzf toolchain.tgz
+rm toolchain.tgz
 cd ..
 
 ###########################################################################################################
@@ -245,7 +252,7 @@ cd $ROOT_DIRECTORY
 # Script post-install
 
 cd $BASEROOT_SDK
-wget --timeout=${WGET_TIMEOUT} ${URL_DOWNLOAD}/zx3/script/daisy/post-script.sh
+wget --timeout=${WGET_TIMEOUT} ${URL_DOWNLOAD}/post-script.sh
 [ $? -eq 0 ] || { internet_error; }
 chmod 777 post-script.sh
 ./post-script.sh
